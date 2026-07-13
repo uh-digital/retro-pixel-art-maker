@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro Pixel Art Maker</title>
+    <!-- Tailwind CSS Play CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+     <style>
+        .arcade-glow {
+            text-shadow: 0 0 8px rgba(244, 63, 94, 0.6), 0 0 15px rgba(244, 63, 94, 0.4);
+        }
+        .pixel-cell {
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+    </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen flex flex-col items-center justify-center p-6 bg-[radial-gradient(circle_at_center,rgba(244,63,94,0.05)_0,transparent_70%)]">
+
+    <header class="text-center mb-6">
+        <h1 class="text-3xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-rose-500 via-pink-500 to-purple-500 uppercase arcade-glow">
+            👾 Retro Pixel Maker
+        </h1>
+        <p class="text-zinc-400 text-xs mt-1">Select a color, then click or click-and-drag over the grid to draw retro pixel art!</p>
+    </header>
+
+    <div class="max-w-4xl w-full grid grid-cols-1 md:grid-cols-4 gap-6 items-center">
+        
+        <!-- Left Menu: Toolbar & Palette -->
+        <div class="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl shadow-2xl space-y-6">
+            <!-- Color Picker Section -->
+            <div>
+                <h3 class="text-xs font-bold text-rose-400 uppercase tracking-wider mb-3">1. Select Color</h3>
+                <div class="flex flex-col gap-3">
+                    <div class="flex items-center gap-3 bg-zinc-950 p-2 rounded-xl border border-zinc-800">
+                        <input id="colorPicker" type="color" value="#f43f5e" 
+                               class="w-10 h-10 rounded-lg cursor-pointer bg-transparent border-0">
+                        <span class="text-xs font-mono font-semibold text-zinc-400">Custom Picker</span>
+                    </div>
+                    
+                    <div class="grid grid-cols-5 gap-1.5 mt-1" id="presetPalette">
+                        <!-- Presets loaded via JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Canvas Grid Size Selector -->
+            <div>
+                <h3 class="text-xs font-bold text-rose-400 uppercase tracking-wider mb-2">2. Grid Canvas Resolution</h3>
+                <select id="gridSizeSelect" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-medium text-zinc-300 focus:outline-none focus:border-rose-500 cursor-pointer">
+                    <option value="16">16 x 16 (Classic Retro)</option>
+                    <option value="24" selected>24 x 24 (Standard Pixel)</option>
+                    <option value="32">32 x 32 (Advanced High-Res)</option>
+                </select>
+            </div>
+
+            <!-- Clear & Action Controls -->
+            <div class="space-y-2 pt-2 border-t border-zinc-800/60">
+                <button id="clearBtn" class="w-full bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 font-bold py-2.5 rounded-xl transition-all active:scale-95 text-xs uppercase tracking-wide">
+                    🧼 Clear Canvas
+                </button>
+                <button id="eraserBtn" class="w-full bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 font-bold py-2.5 rounded-xl transition-all active:scale-95 text-xs uppercase tracking-wide flex items-center justify-center gap-1">
+                    ✏️ Eraser Mode: <span id="eraserStatus" class="text-rose-500">OFF</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Center/Right: Interactive Pixel Art Board Area -->
+        <div class="md:col-span-3 bg-zinc-900 border border-zinc-800 p-6 rounded-3xl shadow-2xl flex items-center justify-center relative overflow-hidden min-h-[460px]">
+            
+            <!-- FIXED: Added explicit layout heights to prevent row collapses -->
+            <div id="pixelCanvas" class="bg-zinc-950 border border-zinc-800 rounded-lg shadow-inner grid overflow-hidden transition-all duration-200 cursor-crosshair w-[384px] h-[384px] sm:w-[400px] sm:h-[400px]">
+                <!-- Pixel divs dynamically appended here -->
+            </div>
+
+        </div>
+    </div>
+
+    <!-- JavaScript Game Logic Framework -->
+    <script>
+        const pixelCanvas = document.getElementById('pixelCanvas');
+        const colorPicker = document.getElementById('colorPicker');
+        const presetPalette = document.getElementById('presetPalette');
+        const gridSizeSelect = document.getElementById('gridSizeSelect');
+        const clearBtn = document.getElementById('clearBtn');
+        const eraserBtn = document.getElementById('eraserBtn');
+        const eraserStatus = document.getElementById('eraserStatus');
+
+        const presets = [
+            '#ef4444', '#f97316', '#f59e0b', '#eab308', '#22c55e', 
+            '#10b981', '#06b6d4', '#3b82f6', '#6366f1', '#a855f7', 
+            '#d946ef', '#ec4899', '#f43f5e', '#ffffff', '#000000'
+        ];
+
+        let selectedColor = '#f43f5e';
+        let isEraserActive = false;
+        let isDrawingStateActive = false;
+
+        presets.forEach(color => {
+            const swatch = document.createElement('button');
+            swatch.className = "w-6 h-6 rounded-md border border-zinc-800/80 transition-transform active:scale-90 hover:scale-105 shadow-sm";
+            swatch.style.backgroundColor = color;
+            swatch.title = color;
+            
+            swatch.addEventListener('click', () => {
+                selectedColor = color;
+                colorPicker.value = color;
+                if (isEraserActive) toggleEraserMode();
+            });
+            presetPalette.appendChild(swatch);
+        });
+
+        colorPicker.addEventListener('input', (e) => {
+            selectedColor = e.target.value;
+            if (isEraserActive) toggleEraserMode();
+        });
+
+        // 2. FIXED: Robust Matrix Resolution Layout Sizing Function
+        function createDrawingGrid() {
+            pixelCanvas.innerHTML = ''; 
+            const resolutionSize = parseInt(gridSizeSelect.value);
+
+            pixelCanvas.style.gridTemplateColumns = `repeat(${resolutionSize}, minmax(0, 1fr))`;
+            pixelCanvas.style.gridTemplateRows = `repeat(${resolutionSize}, minmax(0, 1fr))`;
+            
+            const totalCells = resolutionSize * resolutionSize;
+            
+            for (let i = 0; i < totalCells; i++) {
+                const cell = document.createElement('div');
+                // FIXED: Changed border format to ensure grid borders are always visible and paintable
+                cell.className = "pixel-cell border-[0.5px] border-zinc-900 bg-transparent transition-colors duration-75 h-full w-full";
+                
+                cell.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    isDrawingStateActive = true;
+                    applyPaintColor(cell);
+                });
+
+                cell.addEventListener('mouseenter', () => {
+                    if (isDrawingStateActive) {
+                        applyPaintColor(cell);
+                    }
+                });
+
+                pixelCanvas.appendChild(cell);
+            }
+        }
+
+        window.addEventListener('mouseup', () => {
+            isDrawingStateActive = false;
+        });
+
+        function applyPaintColor(targetCell) {
+            if (isEraserActive) {
+                targetCell.style.backgroundColor = 'transparent';
+            } else {
+                targetCell.style.backgroundColor = selectedColor;
+            }
+        }
+
+        function toggleEraserMode() {
+            isEraserActive = !isEraserActive;
+            if (isEraserActive) {
+                eraserStatus.innerText = "ON";
+                eraserStatus.className = "text-green-500 font-black";
+                eraserBtn.className = "w-full bg-zinc-800 border border-rose-500/50 text-zinc-100 font-bold py-2.5 rounded-xl transition-all active:scale-95 text-xs uppercase tracking-wide flex items-center justify-center gap-1";
+            } else {
+                eraserStatus.innerText = "OFF";
+                eraserStatus.className = "text-rose-500";
+                eraserBtn.className = "w-full bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 font-bold py-2.5 rounded-xl transition-all active:scale-95 text-xs uppercase tracking-wide flex items-center justify-center gap-1";
+            }
+        }
+
+        clearBtn.addEventListener('click', () => {
+            const allCells = pixelCanvas.querySelectorAll('.pixel-cell');
+            allCells.forEach(cell => cell.style.backgroundColor = 'transparent');
+        });
+
+        gridSizeSelect.addEventListener('change', createDrawingGrid);
+        eraserBtn.addEventListener('click', toggleEraserMode);
+
+        createDrawingGrid();
+    </script>
+</body>
+</html>
